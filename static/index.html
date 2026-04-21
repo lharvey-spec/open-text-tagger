@@ -49,15 +49,39 @@
         /* ── Layout ── */
         .page { max-width: 1600px; margin: 0 auto; padding: 20px 24px 80px; }
         .two-col {
-            display: grid;
-            grid-template-columns: 260px 1fr;
-            gap: 16px;
+            display: flex;
             align-items: start;
+            gap: 0;
+        }
+        .left-panel-wrap {
+            flex-shrink: 0;
+            min-width: 180px;
+            max-width: 600px;
         }
         .left-panel {
             position: sticky; top: 68px;
             display: flex; flex-direction: column; gap: 12px;
         }
+        .resize-handle {
+            flex-shrink: 0;
+            width: 12px;
+            cursor: col-resize;
+            align-self: stretch;
+            position: relative;
+            z-index: 5;
+        }
+        .resize-handle::after {
+            content: '';
+            position: absolute;
+            top: 0; bottom: 0;
+            left: 5px;
+            width: 2px;
+            background: var(--border);
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .resize-handle:hover::after { background: var(--primary); }
+        .right-panel { flex: 1; min-width: 0; }
 
         /* ── Card ── */
         .card {
@@ -128,7 +152,7 @@
         .ms-active { border-color: var(--primary); color: var(--primary); }
         .ms-dropdown {
             position: absolute; top: calc(100% + 4px); left: 0;
-            min-width: 220px; max-height: 280px; overflow-y: auto;
+            min-width: 380px; max-height: 280px; overflow-y: auto;
             background: var(--surface); border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: 0 4px 12px rgba(0,0,0,0.12);
@@ -137,6 +161,7 @@
         .ms-dropdown label {
             display: flex; align-items: center; gap: 8px;
             padding: 5px 12px; cursor: pointer; font-size: 13px; user-select: none;
+            white-space: nowrap;
         }
         .ms-dropdown label:hover { background: var(--bg); }
         .ms-clear {
@@ -166,7 +191,10 @@
         tbody tr:hover td { background: #f5f8ff; }
 
         td.col-row  { width: 48px; color: var(--muted); font-size: 12px; padding-top: 8px; }
-        td.col-id   { width: 80px; color: var(--muted); font-size: 12px; padding-top: 8px; }
+        td.col-id   {
+            width: 48px; max-width: 48px; color: var(--muted); font-size: 12px; padding-top: 8px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         td.col-tag  { width: 240px; }
 
         .quote-cell {
@@ -254,6 +282,7 @@
         <div class="two-col">
 
             <!-- Left: tag list + frequency -->
+            <div class="left-panel-wrap" :style="'width:' + leftW + 'px'">
             <div class="left-panel">
                 <div class="card">
                     <p class="panel-title">Tag list</p>
@@ -273,9 +302,13 @@
                     </table>
                 </div>
             </div>
+            </div><!-- /left-panel-wrap -->
+
+            <!-- Drag handle -->
+            <div class="resize-handle" @mousedown="startResize($event)"></div>
 
             <!-- Right: filters + table -->
-            <div>
+            <div class="right-panel">
                 <div class="card">
                     <div class="toolbar">
 
@@ -334,7 +367,7 @@
                             <thead>
                                 <tr>
                                     <th style="width:48px">#</th>
-                                    <th style="width:80px">ID</th>
+                                    <th style="width:48px;max-width:48px">ID</th>
                                     <th>Quote</th>
                                     <th style="width:240px">Tag</th>
                                 </tr>
@@ -391,6 +424,7 @@
             filterOpen: false,
             rowFrom:    null,
             rowTo:      null,
+            leftW:      340,
 
             async init() {
                 await this.refresh();
@@ -509,6 +543,21 @@
                 await fetch('/api/clear', {method: 'DELETE'});
                 this.rows = []; this.tags = []; this.tagText = ''; this.filterTags = [];
                 await this.refresh();
+            },
+
+            startResize(e) {
+                const startX = e.clientX;
+                const startW = this.leftW;
+                const onMove = (ev) => {
+                    this.leftW = Math.max(180, Math.min(600, startW + ev.clientX - startX));
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                e.preventDefault();
             },
 
             msg(text) {

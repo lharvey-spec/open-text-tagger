@@ -9,8 +9,9 @@ Usage example:
     build_reference_tags(instructions=["Tags should follow 'Category - specific issue' format"])
     n = apply_pretags()
     print(f"{n} rows pre-tagged from approved-records.csv")
+    ref = read_reference_tags()   # MUST call before tagging
     untagged = get_untagged_rows()
-    # Claude reads untagged rows, assigns tags, then:
+    # Claude consults ref, assigns tags reusing existing ones where possible, then:
     save_tags([{"id": "abc", "tag": "UI - dark mode"}, ...])
     print_tag_summary()
 """
@@ -91,9 +92,21 @@ def apply_tag_changes(renames: dict[str, str] | None = None,
 # ── Step 6 ────────────────────────────────────────────────────────────────────
 
 def build_reference_tags(instructions: list[str] | None = None) -> dict:
-    """Build reference-tags.json from approved-records.csv + instructions."""
-    tag_examples: dict[str, list[str]] = {}
+    """Rebuild tags/examples from approved-records.csv; preserve existing instructions.
 
+    Existing instructions in reference-tags.json are kept unless new ones are passed,
+    in which case the new list replaces them. Tags and examples are always rebuilt fresh.
+    Instructions are only wiped by DELETE /api/clear (which deletes the file entirely).
+    """
+    # Preserve existing instructions unless caller explicitly provides new ones
+    existing_instructions: list[str] = []
+    if REFERENCE_FILE.exists():
+        try:
+            existing_instructions = json.loads(REFERENCE_FILE.read_text()).get("instructions", [])
+        except Exception:
+            pass
+
+    tag_examples: dict[str, list[str]] = {}
     if APPROVED_FILE.exists():
         df = pd.read_csv(APPROVED_FILE)
         df = df[df["tag"].notna() & (df["tag"].astype(str).str.strip() != "")]
@@ -102,7 +115,7 @@ def build_reference_tags(instructions: list[str] | None = None) -> dict:
             tag_examples[str(tag)] = group["quote"].dropna().astype(str).head(3).tolist()
 
     payload = {
-        "instructions": instructions or [],
+        "instructions": instructions if instructions is not None else existing_instructions,
         "tags": [
             {"tag": tag, "examples": examples}
             for tag, examples in sorted(tag_examples.items())
@@ -124,6 +137,7 @@ def apply_pretags() -> int:
 
     approved_df = pd.read_csv(APPROVED_FILE)
     output_df   = pd.read_csv(OUTPUT_FILE)
+    output_df["tag"] = output_df["tag"].astype(object)
 
     id_tag_map = {
         str(row["id"]): str(row["tag"])
@@ -147,6 +161,21 @@ def apply_pretags() -> int:
 
 # ── Step 8 helpers ────────────────────────────────────────────────────────────
 
+def read_reference_tags() -> dict:
+    """Print and return reference-tags.json so Claude consults it before tagging."""
+    if not REFERENCE_FILE.exists():
+        print("No reference-tags.json found.")
+        return {}
+    payload = json.loads(REFERENCE_FILE.read_text())
+    print(f"Instructions: {payload.get('instructions') or 'none'}\n")
+    print(f"{len(payload.get('tags', []))} existing tags:")
+    for t in payload.get("tags", []):
+        print(f"  - {t['tag']}")
+        for ex in t.get("examples", []):
+            print(f"      e.g. {ex[:80]}")
+    return payload
+
+
 def get_untagged_rows() -> list[dict]:
     """Return rows from output.csv that still need a tag."""
     if not OUTPUT_FILE.exists():
@@ -164,6 +193,7 @@ def save_tags(tagged_rows: list[dict]):
         print("output.csv not found.")
         return
     df      = pd.read_csv(OUTPUT_FILE)
+    df["tag"] = df["tag"].astype(object)
     tag_map = {str(r["id"]): str(r["tag"]) for r in tagged_rows}
     for i, row in df.iterrows():
         if str(row["id"]) in tag_map:

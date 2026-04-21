@@ -447,7 +447,10 @@
                 return this.rows.filter(r => {
                     if (this.rowFrom && r.row_number < this.rowFrom) return false;
                     if (this.rowTo   && r.row_number > this.rowTo)   return false;
-                    if (this.filterTags.length > 0 && !this.filterTags.includes(r.tag)) return false;
+                    if (this.filterTags.length > 0) {
+                        const rowTags = r.tag ? r.tag.split(',').map(t => t.trim()).filter(Boolean) : [];
+                        if (!this.filterTags.some(ft => rowTags.includes(ft))) return false;
+                    }
                     return true;
                 });
             },
@@ -456,7 +459,9 @@
                 const freq = {};
                 for (const r of this.rows) {
                     if (r.tag && r.tag.toLowerCase() !== 'nan') {
-                        freq[r.tag] = (freq[r.tag] || 0) + 1;
+                        for (const t of r.tag.split(',').map(t => t.trim()).filter(Boolean)) {
+                            freq[t] = (freq[t] || 0) + 1;
+                        }
                     }
                 }
                 return Object.entries(freq).sort((a, b) => b[1] - a[1]);
@@ -472,7 +477,9 @@
 
             // Keep left-pane tag list in sync when user edits tags in the table
             syncTagsFromTable() {
-                const fromRows = [...new Set(this.rows.map(r => r.tag).filter(t => t && t.toLowerCase() !== 'nan'))].sort();
+                const fromRows = [...new Set(
+                    this.rows.flatMap(r => r.tag ? r.tag.split(',').map(t => t.trim()).filter(t => t && t.toLowerCase() !== 'nan') : [])
+                )].sort();
                 const fromText = this.tagText.split('\n').map(t => t.trim()).filter(Boolean);
                 const newOnly  = fromRows.filter(t => !fromText.includes(t));
                 if (newOnly.length > 0) {
@@ -496,13 +503,16 @@
                 if (removed.length === 1 && added.length === 1) {
                     const [old, nw] = [removed[0], added[0]];
                     for (const r of this.rows) {
-                        if (r.tag === old) r.tag = nw;
+                        const parts = r.tag ? r.tag.split(',').map(t => t.trim()).filter(Boolean) : [];
+                        const idx = parts.indexOf(old);
+                        if (idx !== -1) { parts[idx] = nw; r.tag = parts.join(', '); }
                     }
                     this.msg(`"${old}" renamed to "${nw}".`);
                 } else if (removed.length > 0 && added.length === 0) {
                     const rset = new Set(removed);
                     for (const r of this.rows) {
-                        if (rset.has(r.tag)) r.tag = '';
+                        const parts = r.tag ? r.tag.split(',').map(t => t.trim()).filter(t => t && !rset.has(t)) : [];
+                        r.tag = parts.join(', ');
                     }
                     this.msg(`Removed: ${removed.join(', ')}.`);
                 } else {

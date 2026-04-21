@@ -48,7 +48,7 @@ async def get_data():
     for r in rows:
         r["row_number"] = int(r["row_number"])
 
-    tags = sorted({r["tag"] for r in rows if r["tag"]})
+    tags = sorted({t.strip() for r in rows if r["tag"] for t in r["tag"].split(",") if t.strip()})
     return {"stage": 1, "rows": rows, "tags": tags}
 
 

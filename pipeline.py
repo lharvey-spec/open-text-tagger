@@ -51,14 +51,21 @@ def prepare_output(source_path: str, quote_col: str, id_col: str, n_rows: int) -
 
 # ── Step 3 ────────────────────────────────────────────────────────────────────
 
+def _split_tags(val: str) -> list[str]:
+    """Split a comma-separated tag string into individual tags."""
+    return [t.strip() for t in str(val).split(",") if t.strip() and t.strip().lower() != "nan"]
+
+
 def print_unique_tags() -> list[str]:
-    """Print unique tags from approved-records.csv."""
+    """Print unique tags from approved-records.csv (handles comma-separated multi-tags)."""
     if not APPROVED_FILE.exists():
         print("No approved-records.csv found — no existing tags.")
         return []
     df = pd.read_csv(APPROVED_FILE)
-    tags = sorted(df["tag"].dropna().astype(str).str.strip().unique().tolist())
-    tags = [t for t in tags if t and t.lower() != "nan"]
+    tags = sorted({
+        t for val in df["tag"].dropna().astype(str)
+        for t in _split_tags(val)
+    })
     if tags:
         print(f"{len(tags)} existing tags:")
         for t in tags:
@@ -81,10 +88,16 @@ def apply_tag_changes(renames: dict[str, str] | None = None,
             continue
         if renames:
             for old, new in renames.items():
-                df["tag"] = df["tag"].astype(str).replace(old, new)
+                df["tag"] = df["tag"].apply(
+                    lambda val: ", ".join(new if t == old else t for t in _split_tags(str(val))) or val
+                    if pd.notna(val) else val
+                )
         if removals:
             rset = set(removals)
-            df["tag"] = df["tag"].apply(lambda t: "" if str(t).strip() in rset else t)
+            df["tag"] = df["tag"].apply(
+                lambda val: ", ".join(t for t in _split_tags(str(val)) if t not in rset)
+                if pd.notna(val) else val
+            )
         df.to_csv(filepath, index=False)
     print("Tag changes applied.")
 
@@ -110,9 +123,13 @@ def build_reference_tags(instructions: list[str] | None = None) -> dict:
     if APPROVED_FILE.exists():
         df = pd.read_csv(APPROVED_FILE)
         df = df[df["tag"].notna() & (df["tag"].astype(str).str.strip() != "")]
-        df = df[df["tag"].astype(str).str.lower() != "nan"]
-        for tag, group in df.groupby("tag"):
-            tag_examples[str(tag)] = group["quote"].dropna().astype(str).head(3).tolist()
+        for _, row in df.iterrows():
+            quote = str(row["quote"])
+            for tag in _split_tags(str(row["tag"])):
+                if tag not in tag_examples:
+                    tag_examples[tag] = []
+                if len(tag_examples[tag]) < 3:
+                    tag_examples[tag].append(quote)
 
     payload = {
         "instructions": instructions if instructions is not None else existing_instructions,
@@ -211,10 +228,10 @@ def print_tag_summary():
         return
     df     = pd.read_csv(OUTPUT_FILE)
     counts = Counter(
-        t for t in df["tag"].dropna().astype(str).str.strip()
-        if t and t.lower() != "nan"
+        t for val in df["tag"].dropna().astype(str)
+        for t in _split_tags(val)
     )
-    total_tagged   = sum(counts.values())
+    total_tagged   = df["tag"].notna().sum() - (df["tag"].astype(str).str.strip().isin(["", "nan"])).sum()
     total_rows     = len(df)
     total_untagged = total_rows - total_tagged
 

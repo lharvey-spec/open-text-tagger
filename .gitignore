@@ -1,4 +1,7 @@
 # Data files (user-specific, not committed)
+output.csv
+approved-records.csv
+reference-tags.json
 pretags.json
 approved_examples.json
 tagged_output.csv

@@ -1,0 +1,23 @@
+# Data files (user-specific, not committed)
+pretags.json
+approved_examples.json
+tagged_output.csv
+run_requested
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# OS / editor
+.DS_Store
+*.xlsx
+~$*
+.idea/
+.vscode/
+
+# Claude Code internals
+memory/

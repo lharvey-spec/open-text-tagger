@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback Tagger</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:          #f0f2f5;
+            --surface:     #ffffff;
+            --border:      #dde1e7;
+            --text:        #1c1e21;
+            --muted:       #65676b;
+            --primary:     #1a73e8;
+            --primary-dk:  #1557b0;
+            --danger:      #d93025;
+            --radius:      8px;
+            --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        /* ── Header ── */
+        header {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+            height: 52px;
+            display: flex; align-items: center; justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        header h1 { font-size: 15px; font-weight: 600; }
+        .stage-badge {
+            font-size: 12px; color: var(--muted);
+            background: var(--bg); padding: 3px 10px;
+            border-radius: 99px; border: 1px solid var(--border);
+        }
+
+        /* ── Page wrapper ── */
+        .page { max-width: 1600px; margin: 0 auto; padding: 20px 24px 80px; }
+
+        /* ── Two-column layout ── */
+        .two-col {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+        .left-panel { position: sticky; top: 68px; display: flex; flex-direction: column; gap: 12px; }
+
+        /* ── Card ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+        }
+        .panel-title {
+            font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            color: var(--muted); margin-bottom: 8px;
+        }
+        .hint { font-size: 12px; color: var(--muted); margin-bottom: 8px; line-height: 1.4; }
+
+        /* ── Textarea ── */
+        textarea {
+            width: 100%; border: 1px solid var(--border); border-radius: 6px;
+            padding: 8px; font-family: var(--font); font-size: 13px;
+            line-height: 1.65; resize: vertical; outline: none; color: var(--text);
+        }
+        textarea:focus { border-color: var(--primary); }
+
+        /* ── Frequency table ── */
+        .freq-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .freq-table td { padding: 3px 4px; }
+        .freq-table td:first-child { color: var(--text); word-break: break-word; }
+        .freq-table td:last-child { color: var(--muted); text-align: right; width: 30px; font-variant-numeric: tabular-nums; }
+        .freq-table tr:hover td { background: var(--bg); border-radius: 4px; }
+
+        /* ── Toolbar ── */
+        .toolbar {
+            display: flex; gap: 8px; align-items: center;
+            margin-bottom: 10px; flex-wrap: wrap;
+        }
+        .row-count { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+        /* ── Multiselect filter ── */
+        .multiselect { position: relative; }
+        .ms-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 10px; border: 1px solid var(--border);
+            border-radius: var(--radius); background: var(--surface);
+            cursor: pointer; font-size: 12px; color: var(--text); white-space: nowrap;
+            font-family: var(--font);
+        }
+        .ms-btn:hover { border-color: #aaa; }
+        .ms-active { border-color: var(--primary); color: var(--primary); }
+        .ms-dropdown {
+            position: absolute; top: calc(100% + 4px); left: 0;
+            min-width: 220px; max-height: 280px; overflow-y: auto;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            z-index: 50; padding: 4px 0;
+        }
+        .ms-dropdown label {
+            display: flex; align-items: center; gap: 8px;
+            padding: 5px 12px; cursor: pointer; font-size: 13px; user-select: none;
+        }
+        .ms-dropdown label:hover { background: var(--bg); }
+        .ms-clear {
+            font-size: 11px; color: var(--primary); cursor: pointer;
+            padding: 5px 12px; border-top: 1px solid var(--border);
+            margin-top: 4px; display: block;
+        }
+        .ms-clear:hover { background: var(--bg); }
+
+        /* ── Data table ── */
+        .table-wrap {
+            border: 1px solid var(--border); border-radius: var(--radius);
+            overflow: hidden; overflow-y: auto;
+            max-height: calc(100vh - 220px);
+        }
+        table { width: 100%; border-collapse: collapse; }
+        thead { position: sticky; top: 0; z-index: 10; }
+        th {
+            background: #f3f4f6; padding: 8px 10px;
+            text-align: left; font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--muted); border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tr:last-child td { border-bottom: none; }
+        tbody tr:hover td { background: #f5f8ff; }
+
+        td.col-id { width: 55px; color: var(--muted); font-size: 12px; padding-top: 8px; }
+        td.col-quote { }
+        td.col-tags { width: 260px; }
+        td.col-del  { width: 32px; }
+
+        .quote-cell {
+            display: -webkit-box; -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical; overflow: hidden;
+            font-size: 13px; line-height: 1.5; padding-top: 4px;
+            cursor: default;
+        }
+
+        .tags-input {
+            width: 100%; border: 1px solid transparent;
+            border-radius: 4px; padding: 4px 6px;
+            font-size: 12px; font-family: var(--font);
+            background: transparent; outline: none; color: var(--text);
+        }
+        .tags-input:hover:not(:focus) { border-color: var(--border); background: var(--surface); }
+        .tags-input:focus { border-color: var(--primary); background: var(--surface); }
+
+        /* ── Buttons ── */
+        .btn, button {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 6px 13px; border-radius: var(--radius);
+            border: 1px solid var(--border); background: var(--surface);
+            color: var(--text); font-size: 13px; font-family: var(--font);
+            cursor: pointer; white-space: nowrap; text-decoration: none;
+            line-height: 1.4;
+        }
+        .btn:hover, button:hover { background: var(--bg); }
+        .btn-primary, button.primary {
+            background: var(--primary); color: white; border-color: var(--primary);
+        }
+        .btn-primary:hover, button.primary:hover { background: var(--primary-dk); }
+        button.danger { color: var(--danger); }
+        button.danger:hover { background: #fce8e6; border-color: var(--danger); }
+        button.icon-btn {
+            padding: 3px 7px; border: none; background: none; color: var(--muted);
+            font-size: 15px; line-height: 1;
+        }
+        button.icon-btn:hover { color: var(--danger); background: #fce8e6; border-radius: 4px; }
+        button.full { width: 100%; justify-content: center; margin-top: 8px; }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        /* ── Bottom bar ── */
+        .bottom-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: var(--surface); border-top: 1px solid var(--border);
+            padding: 9px 24px; display: flex; gap: 8px; align-items: center;
+            z-index: 90; box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+        }
+        .spacer { flex: 1; }
+
+        /* ── Hero (stage 0 & 2) ── */
+        .hero {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; min-height: calc(100vh - 52px);
+            text-align: center; gap: 14px;
+        }
+        .hero h2 { font-size: 26px; font-weight: 700; }
+        .hero p  { color: var(--muted); max-width: 420px; line-height: 1.6; }
+
+        /* ── Spinner ── */
+        .spinner {
+            width: 30px; height: 30px;
+            border: 3px solid var(--border); border-top-color: var(--primary);
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Toast ── */
+        .toast {
+            position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
+            background: #1c1e21; color: white; padding: 7px 18px;
+            border-radius: 99px; font-size: 13px; z-index: 200;
+            pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            white-space: nowrap;
+        }
+
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body x-data="tagger()" x-init="init()" x-cloak>
+
+    <!-- Toast -->
+    <div class="toast" x-show="toast" x-text="toast" x-transition.opacity></div>
+
+    <!-- Header -->
+    <header>
+        <h1>Feedback Tagger</h1>
+        <span class="stage-badge" x-text="stageName"></span>
+    </header>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Stage 0 — Waiting for data
+    ═══════════════════════════════════════════════════════════════ -->
+    <div class="page" x-show="stage === 0">
+        <div class="hero">
+            <h2>Feedback Tagger</h2>
+            <p>Paste a CSV path and column name in the Claude Code chat. Claude will read the data, suggest tags, and load them here.</p>
+            <button @click="refresh()">↻ &nbsp;Check for data</button>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Stage 1 — Tag editor
+    ═══════════════════════════════════════════════════════════════ -->
+    <div class="page" x-show="stage === 1">
+        <div class="two-col">
+
+            <!-- Left: tag list + frequency -->
+            <div class="left-panel">
+                <div class="card">
+                    <p class="panel-title">Tag list</p>
+                    <p class="hint">Edit, rename, or remove tags then click Apply to cascade changes to the table.</p>
+                    <textarea x-model="tagText" rows="14" spellcheck="false"></textarea>
+                    <button class="full" @click="applyTagChanges()">Apply changes</button>
+                </div>
+                <div class="card" x-show="computedFreq.length > 0">
+                    <p class="panel-title">Frequency</p>
+                    <table class="freq-table">
+                        <template x-for="[tag, n] in computedFreq" :key="tag">
+                            <tr>
+                                <td x-text="tag"></td>
+                                <td x-text="n"></td>
+                            </tr>
+                        </template>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right: filter + table -->
+            <div>
+                <div class="card">
+                    <div class="toolbar">
+                        <!-- Multiselect filter -->
+                        <div class="multiselect" @click.outside="filterOpen = false">
+                            <button type="button" class="ms-btn" :class="filterTags.length ? 'ms-active' : ''"
+                                    @click="filterOpen = !filterOpen">
+                                <span x-text="filterTags.length ? filterTags.length + ' tag' + (filterTags.length > 1 ? 's' : '') + ' selected' : 'Filter by tag'"></span>
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                            </button>
+                            <div class="ms-dropdown" x-show="filterOpen" x-transition>
+                                <template x-for="tag in tags" :key="tag">
+                                    <label>
+                                        <input type="checkbox" :checked="filterTags.includes(tag)" @change="toggleFilter(tag)">
+                                        <span x-text="tag"></span>
+                                    </label>
+                                </template>
+                                <span class="ms-clear" x-show="filterTags.length > 0"
+                                      @click="filterTags = []; filterOpen = false">Clear filter</span>
+                            </div>
+                        </div>
+                        <span class="row-count" x-text="filteredRows.length + ' of ' + rows.length + ' rows'"></span>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Quote</th>
+                                    <th>Tags (comma-separated)</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="row in filteredRows" :key="row.id">
+                                    <tr>
+                                        <td class="col-id" x-text="row.id"></td>
+                                        <td class="col-quote"><div class="quote-cell" x-text="row.quote"></div></td>
+                                        <td class="col-tags">
+                                            <input type="text" class="tags-input" x-model="row.tags">
+                                        </td>
+                                        <td class="col-del">
+                                            <button class="icon-btn" @click="deleteRow(row)" title="Remove row">×</button>
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredRows.length === 0">
+                                    <td colspan="4" style="text-align:center;color:var(--muted);padding:28px">
+                                        No rows match the current filter.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom bar -->
+        <div class="bottom-bar">
+            <a class="btn" href="/download/pretags.json">↓ pretags.json</a>
+            <a class="btn" href="/download/reference_tags.csv">↓ reference_tags.csv</a>
+            <a class="btn" href="/download/approved_examples.json">↓ approved_examples.json</a>
+            <div class="spacer"></div>
+            <button @click="saveReference()">Save reference</button>
+            <button class="primary" @click="runAnalysis()">Run full analysis →</button>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Stage 2 — Analysis running
+    ═══════════════════════════════════════════════════════════════ -->
+    <div class="page" x-show="stage === 2">
+        <div class="hero">
+            <div class="spinner"></div>
+            <h2>Analysis running…</h2>
+            <p>Claude is tagging the full dataset. Check the Claude Code chat for progress, then click below when done.</p>
+            <button @click="refresh()">↻ &nbsp;Check if done</button>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Stage 3 — Results
+    ═══════════════════════════════════════════════════════════════ -->
+    <div class="page" x-show="stage === 3">
+        <div class="two-col">
+
+            <!-- Left: tag list + frequency -->
+            <div class="left-panel">
+                <div class="card">
+                    <p class="panel-title">Tag list</p>
+                    <p class="hint">Rename or remove tags then click Apply — changes cascade to every row and save immediately.</p>
+                    <textarea x-model="tagText" rows="14" spellcheck="false"></textarea>
+                    <button class="full" @click="applyTagChanges()">Apply changes</button>
+                </div>
+                <div class="card" x-show="computedFreq.length > 0">
+                    <p class="panel-title">Frequency</p>
+                    <table class="freq-table">
+                        <template x-for="[tag, n] in computedFreq" :key="tag">
+                            <tr>
+                                <td x-text="tag"></td>
+                                <td x-text="n"></td>
+                            </tr>
+                        </template>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right: filter + table -->
+            <div>
+                <div class="card">
+                    <div class="toolbar">
+                        <div class="multiselect" @click.outside="filterOpen = false">
+                            <button type="button" class="ms-btn" :class="filterTags.length ? 'ms-active' : ''"
+                                    @click="filterOpen = !filterOpen">
+                                <span x-text="filterTags.length ? filterTags.length + ' tag' + (filterTags.length > 1 ? 's' : '') + ' selected' : 'Filter by tag'"></span>
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                    <path d="M2 3.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                            </button>
+                            <div class="ms-dropdown" x-show="filterOpen" x-transition>
+                                <template x-for="tag in tags" :key="tag">
+                                    <label>
+                                        <input type="checkbox" :checked="filterTags.includes(tag)" @change="toggleFilter(tag)">
+                                        <span x-text="tag"></span>
+                                    </label>
+                                </template>
+                                <span class="ms-clear" x-show="filterTags.length > 0"
+                                      @click="filterTags = []; filterOpen = false">Clear filter</span>
+                            </div>
+                        </div>
+
+                        <button @click="showSample = !showSample"
+                                x-text="showSample ? 'View all results' : 'View sample only'"></button>
+
+                        <span class="row-count"
+                              x-text="filteredRows.length + ' of ' + rows.length + ' rows' + (showSample ? ' (sample)' : '')">
+                        </span>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Quote</th>
+                                    <th>Tags (comma-separated)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="row in filteredRows" :key="row.id">
+                                    <tr>
+                                        <td class="col-id" x-text="row.id"></td>
+                                        <td class="col-quote"><div class="quote-cell" x-text="row.quote"></div></td>
+                                        <td class="col-tags">
+                                            <input type="text" class="tags-input" x-model="row.tags">
+                                        </td>
+                                    </tr>
+                                </template>
+                                <tr x-show="filteredRows.length === 0">
+                                    <td colspan="3" style="text-align:center;color:var(--muted);padding:28px">
+                                        No rows match the current filter.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom bar -->
+        <div class="bottom-bar">
+            <a class="btn" href="/download/tagged_output.csv">↓ tagged_output.csv</a>
+            <a class="btn" href="/download/approved_examples.json">↓ approved_examples.json</a>
+            <div class="spacer"></div>
+            <button @click="saveTags()">Save tag edits</button>
+            <button class="danger" @click="clearAll()">Clear & start fresh</button>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Alpine.js app
+    ═══════════════════════════════════════════════════════════════ -->
+    <script>
+    function tagger() {
+        return {
+            stage:      0,
+            toast:      '',
+            _timer:     null,
+
+            tags:       [],   // committed tag list (matches server state)
+            tagText:    '',   // textarea content (user is editing this)
+            rows:       [],   // all rows — [{id, quote, tags}]
+            filterTags: [],
+            filterOpen: false,
+            sampleIds:  [],
+            showSample: false,
+
+            async init() {
+                await this.refresh();
+            },
+
+            async refresh() {
+                const data = await fetch('/api/data').then(r => r.json());
+                this.stage = data.stage;
+                if (data.tags) {
+                    this.tags    = [...data.tags];
+                    this.tagText = data.tags.join('\n');
+                }
+                if (data.rows)       this.rows      = data.rows.map(r => ({...r}));
+                if (data.sample_ids) this.sampleIds = data.sample_ids;
+                this.filterTags = [];
+            },
+
+            // ── Computed ──────────────────────────────────────────────────
+
+            get stageName() {
+                return ['Waiting for data', 'Edit tags', 'Analysis running', 'Results'][this.stage] || '';
+            },
+
+            get filteredRows() {
+                let rows = (this.showSample && this.stage === 3)
+                    ? this.rows.filter(r => this.sampleIds.includes(r.id))
+                    : this.rows;
+                if (this.filterTags.length > 0) {
+                    const sel = new Set(this.filterTags);
+                    rows = rows.filter(r =>
+                        r.tags.split(',').map(t => t.trim()).some(t => sel.has(t))
+                    );
+                }
+                return rows;
+            },
+
+            get computedFreq() {
+                const freq = {};
+                for (const r of this.rows) {
+                    for (const t of r.tags.split(',').map(s => s.trim())
+                                         .filter(s => s && s.toLowerCase() !== 'nan')) {
+                        freq[t] = (freq[t] || 0) + 1;
+                    }
+                }
+                return Object.entries(freq).sort((a, b) => b[1] - a[1]);
+            },
+
+            // ── Interactions ──────────────────────────────────────────────
+
+            toggleFilter(tag) {
+                const i = this.filterTags.indexOf(tag);
+                if (i === -1) this.filterTags.push(tag);
+                else          this.filterTags.splice(i, 1);
+            },
+
+            deleteRow(row) {
+                this.rows = this.rows.filter(r => r.id !== row.id);
+            },
+
+            // Apply rename / delete from the tag textarea
+            async applyTagChanges() {
+                const newTags  = this.tagText.split('\n').map(t => t.trim()).filter(Boolean);
+                const prevTags = this.tags;
+                const removed  = prevTags.filter(t => !newTags.includes(t));
+                const added    = newTags.filter(t => !prevTags.includes(t));
+
+                if (removed.length === 0 && added.length === 0) {
+                    this.msg('No tag changes detected.');
+                    return;
+                }
+
+                // Apply cascade locally
+                if (removed.length === 1 && added.length === 1) {
+                    const [old, nw] = [removed[0], added[0]];
+                    for (const r of this.rows) {
+                        const parts = r.tags.split(',').map(t => t.trim()).filter(Boolean);
+                        r.tags = parts.map(p => p === old ? nw : p).join(', ');
+                    }
+                } else if (removed.length > 0 && added.length === 0) {
+                    const rset = new Set(removed);
+                    for (const r of this.rows) {
+                        const parts = r.tags.split(',').map(t => t.trim())
+                                            .filter(t => t && !rset.has(t));
+                        r.tags = parts.length > 0 ? parts.join(', ') : 'Unclear';
+                    }
+                }
+
+                // Prune filter selection
+                this.filterTags = this.filterTags.filter(t => newTags.includes(t));
+                this.tags = newTags;
+
+                // Stage 3: persist to CSV
+                if (this.stage === 3) {
+                    await fetch('/api/save_tags', {
+                        method:  'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body:    JSON.stringify({rows: this.rows}),
+                    });
+                }
+
+                const action = removed.length === 1 && added.length === 1
+                    ? `"${removed[0]}" → "${added[0]}"${this.stage === 3 ? ' — saved.' : '.'}`
+                    : `Removed: ${removed.join(', ')}${this.stage === 3 ? ' — saved.' : '.'}`;
+                this.msg(action);
+            },
+
+            async saveReference() {
+                const tags = this.tagText.split('\n').map(t => t.trim()).filter(Boolean);
+                const res  = await fetch('/api/save_reference', {
+                    method:  'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body:    JSON.stringify({tags, rows: this.rows}),
+                });
+                if (res.ok) this.msg('Saved to approved_examples.json.');
+            },
+
+            async runAnalysis() {
+                const tags = this.tagText.split('\n').map(t => t.trim()).filter(Boolean);
+                await fetch('/api/run_analysis', {
+                    method:  'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body:    JSON.stringify({tags, rows: this.rows}),
+                });
+                await this.refresh();
+            },
+
+            async saveTags() {
+                const res = await fetch('/api/save_tags', {
+                    method:  'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body:    JSON.stringify({rows: this.rows}),
+                });
+                if (res.ok) this.msg('Saved to tagged_output.csv.');
+            },
+
+            async clearAll() {
+                if (!confirm('Delete all analysis files and return to the start?')) return;
+                await fetch('/api/clear', {method: 'DELETE'});
+                this.tags = []; this.tagText = ''; this.rows = []; this.filterTags = [];
+                await this.refresh();
+            },
+
+            msg(text) {
+                this.toast = text;
+                clearTimeout(this._timer);
+                this._timer = setTimeout(() => { this.toast = ''; }, 3000);
+            },
+        };
+    }
+    </script>
+
+</body>
+</html>
